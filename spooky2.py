@@ -1,4 +1,7 @@
 from google import genai
+from dotenv import load_dotenv
+import os
+load_dotenv()
 import pyautogui
 import PIL.Image
 import time
@@ -19,7 +22,7 @@ from firebase_admin import credentials, firestore
 # FIREBASE SETUP
 # ==========================
 
-cred = credentials.Certificate("spooky-2514e-firebase-adminsdk-fbsvc-c0a13d7787.json")
+cred = credentials.Certificate(os.getenv("FIREBASE_CREDENTIALS_PATH"))
 
 if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
@@ -313,7 +316,7 @@ def highlight_threat(image_path):
 # ==========================
 
 client = genai.Client(
-    api_key="AIzaSyDtubv14-YcKKfRW5mVG4Gt-VLYmJyd1e0",
+    api_key=os.getenv("GEMINI_API_KEY"),
     http_options={'api_version': 'v1'}
 )
 
