@@ -9,11 +9,11 @@ import pyttsx3
 import speech_recognition as sr
 import pytesseract
 import cv2
-import numpy as np
 import re
 import random
 import threading
 import keyboard
+from pathlib import Path
 from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -23,18 +23,54 @@ import urllib.parse
 # FIREBASE SETUP
 # ==========================
 
-cred = credentials.Certificate(os.getenv("FIREBASE_CREDENTIALS_PATH"))
+RUNTIME_DIR = Path.home() / ".spooky" / "runtime"
+CURRENT_VIEW_PATH = RUNTIME_DIR / "current_view.png"
+TESSERACT_PATH = Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe")
+_keyboard_warning_shown = False
 
-if not firebase_admin._apps:
-    firebase_admin.initialize_app(cred)
 
-db = firestore.client()
+def require_env(name):
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
+def ensure_runtime_ready():
+    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    if not TESSERACT_PATH.exists():
+        raise RuntimeError(
+            f"Tesseract not found at {TESSERACT_PATH}. Install it or update the configured path."
+        )
+
+
+def build_firestore_client():
+    credentials_path = Path(require_env("FIREBASE_CREDENTIALS_PATH")).expanduser()
+    if not credentials_path.exists():
+        raise RuntimeError(f"Firebase credentials file not found: {credentials_path}")
+
+    cred = credentials.Certificate(str(credentials_path))
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(cred)
+    return firestore.client()
+
+
+def build_gemini_client():
+    return genai.Client(
+        api_key=require_env("GEMINI_API_KEY"),
+        http_options={'api_version': 'v1'}
+    )
+
+
+ensure_runtime_ready()
+db = build_firestore_client()
+client = build_gemini_client()
 
 # ==========================
 # TESSERACT PATH
 # ==========================
 
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+pytesseract.pytesseract.tesseract_cmd = str(TESSERACT_PATH)
 
 # ==========================
 # VOICE ENGINE (interruptible with SPACE)
@@ -50,6 +86,17 @@ def _on_word(name, location, length):
     if _tts_interrupted:
         if _tts_engine:
             _tts_engine.stop()
+
+
+def is_space_pressed():
+    global _keyboard_warning_shown
+    try:
+        return keyboard.is_pressed('space')
+    except Exception as error:
+        if not _keyboard_warning_shown:
+            print(f"Keyboard hook unavailable: {error}")
+            _keyboard_warning_shown = True
+        return False
 
 
 def speak(text):
@@ -109,14 +156,14 @@ def speak(text):
     tts_thread.start()
 
     while not spoken_complete.is_set():
-        if keyboard.is_pressed('space'):
+        if is_space_pressed():
             _tts_interrupted = True
             print("\n⏹️ Speech interrupted!")
             with _tts_lock:
                 if _tts_engine:
                     try:
                         _tts_engine.stop()
-                    except:
+                    except Exception:
                         pass
             break
         spoken_complete.wait(timeout=0.05)
@@ -195,7 +242,9 @@ def quick_ocr_check(image_path):
     Layer 3 — Suspicious URL patterns in visible text
     Returns: (triggered: bool, reason: str)
     """
-    img = cv2.imread(image_path)
+    img = cv2.imread(str(image_path))
+    if img is None:
+        raise RuntimeError(f"Unable to read screenshot: {image_path}")
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     text = pytesseract.image_to_string(gray).lower()
 
@@ -223,7 +272,9 @@ def quick_ocr_check(image_path):
 
 def extract_visible_urls(image_path):
     """Extract URLs and domains visible in the screenshot via OCR."""
-    img = cv2.imread(image_path)
+    img = cv2.imread(str(image_path))
+    if img is None:
+        raise RuntimeError(f"Unable to read screenshot: {image_path}")
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     text = pytesseract.image_to_string(gray)
 
@@ -259,7 +310,7 @@ def is_suspicious_url(url):
         domain = urllib.parse.urlparse(url).netloc
         if domain.count('.') >= 3:
             signals.append("excessive subdomains")
-    except:
+    except ValueError:
         pass
 
     if re.search(r'(paypal|google|apple|amazon|microsoft|netflix|bank)\d', url_lower):
@@ -274,7 +325,9 @@ def is_suspicious_url(url):
 
 def highlight_threat(image_path):
     def _show_alert():
-        img = cv2.imread(image_path)
+        img = cv2.imread(str(image_path))
+        if img is None:
+            raise RuntimeError(f"Unable to read screenshot: {image_path}")
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         gray = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1]
         data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
@@ -307,16 +360,6 @@ def highlight_threat(image_path):
     alert_thread.start()
     alert_thread.join()
     time.sleep(0.5)
-
-
-# ==========================
-# GEMINI CLIENT
-# ==========================
-
-client = genai.Client(
-    api_key=os.getenv("GEMINI_API_KEY"),
-    http_options={'api_version': 'v1'}
-)
 
 
 # ==========================
@@ -353,41 +396,54 @@ Respond with ONLY:
 
 Be aggressive — a false positive is safer than a missed threat.
 """
-    img = PIL.Image.open(image_path)
-    response = client.models.generate_content(
-        model="gemini-2.5-flash-lite",
-        contents=[prompt, img]
-    )
-    img.close()
-    return response.text.strip()
+    with PIL.Image.open(image_path) as img:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=[prompt, img]
+        )
+    return (response.text or "").strip()
 
 
 def gemini_explain(image_path):
-    img = PIL.Image.open(image_path)
-    response = client.models.generate_content(
-        model="gemini-2.5-flash-lite",
-        contents=[
-            "In one clear sentence, explain why this screen is dangerous and what the attacker is trying to steal or achieve.",
-            img
-        ]
-    )
-    img.close()
-    return response.text.strip()
+    with PIL.Image.open(image_path) as img:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=[
+                "In one clear sentence, explain why this screen is dangerous and what the attacker is trying to steal or achieve.",
+                img
+            ]
+        )
+    return (response.text or "").strip()
 
 
 def gemini_chat(image_path, user_question):
-    img = PIL.Image.open(image_path)
-    response = client.models.generate_content(
-        model="gemini-2.5-flash-lite",
-        contents=[
-            f"""You are Spooky, a cybersecurity AI assistant.
+    with PIL.Image.open(image_path) as img:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=[
+                f"""You are Spooky, a cybersecurity AI assistant.
 The user is viewing a suspicious page and asked: "{user_question}"
 Answer in 2 sentences max. Be clear, direct and helpful.""",
-            img
-        ]
-    )
-    img.close()
-    return response.text.strip()
+                img
+            ]
+        )
+    return (response.text or "").strip()
+
+
+def get_system_active():
+    try:
+        status = db.collection("system").document("status").get()
+        return status.to_dict().get("active", True) if status.exists else True
+    except Exception as error:
+        print(f"Firestore status check failed: {error}")
+        return True
+
+
+def save_current_screenshot():
+    screenshot = pyautogui.screenshot()
+    screenshot.save(CURRENT_VIEW_PATH)
+    screenshot.close()
+    return CURRENT_VIEW_PATH
 
 
 # ==========================
@@ -410,8 +466,7 @@ try:
     while True:
 
         # Remote kill switch
-        status = db.collection("system").document("status").get()
-        active = status.to_dict().get("active", True) if status.exists else True
+        active = get_system_active()
 
         if not active:
             print("😴 Spooky is sleeping (website control)")
@@ -421,12 +476,10 @@ try:
         check_count += 1
 
         # Screenshot
-        screenshot = pyautogui.screenshot()
-        screenshot.save("current_view.png")
-        screenshot.close()
+        current_view = save_current_screenshot()
 
         # Layer 1+2+3: OCR pre-check
-        suspicious, ocr_reason = quick_ocr_check("current_view.png")
+        suspicious, ocr_reason = quick_ocr_check(current_view)
 
         # Periodic forced deep scan every 5 checks (catches visual-only scams)
         force_deep_scan = (check_count % 5 == 0)
@@ -442,7 +495,7 @@ try:
             print(f"\nCheck {check_count}: ⚠ OCR triggered ({ocr_reason}) → Gemini...")
 
         # URL analysis
-        urls = extract_visible_urls("current_view.png")
+        urls = extract_visible_urls(current_view)
         url_warnings = []
         for url in urls[:5]:
             signals = is_suspicious_url(url)
@@ -454,7 +507,7 @@ try:
 
         # Gemini deep analysis
         try:
-            analysis = gemini_analyze("current_view.png", url_context)
+            analysis = gemini_analyze(current_view, url_context)
         except Exception as e:
             print(f"Gemini error: {e}")
             time.sleep(60)
@@ -469,13 +522,13 @@ try:
 
         if "Clear" not in analysis and not last_threat:
 
-            highlight_threat("current_view.png")
+            highlight_threat(current_view)
             time.sleep(1)
             speak("Warning. Potential threat detected on your screen.")
 
             spoken_explanation = "Explanation unavailable"
             try:
-                spoken_explanation = gemini_explain("current_view.png")
+                spoken_explanation = gemini_explain(current_view)
                 speak(spoken_explanation)
             except Exception as e:
                 print("Explanation error:", e)
@@ -509,7 +562,7 @@ try:
                     break
 
                 try:
-                    answer = gemini_chat("current_view.png", user_input)
+                    answer = gemini_chat(current_view, user_input)
                     speak(answer)
                     speak("Ask another question, or say resume.")
                 except Exception as e:
@@ -525,8 +578,7 @@ try:
 
         # Wait with kill switch check each second
         for _ in range(60):
-            status = db.collection("system").document("status").get()
-            active = status.to_dict().get("active", True) if status.exists else True
+            active = get_system_active()
             if not active:
                 print("😴 Spooky stopped by dashboard")
                 break
@@ -534,3 +586,8 @@ try:
 
 except KeyboardInterrupt:
     print("\n👻 Spooky is going back to sleep.")
+finally:
+    try:
+        CURRENT_VIEW_PATH.unlink(missing_ok=True)
+    except OSError:
+        pass
