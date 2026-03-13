@@ -58,14 +58,14 @@ pip install google-genai pyautogui pillow pyttsx3 speechrecognition pytesseract 
 Create a `.env` file in the root directory:
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
-FIREBASE_CREDENTIALS_PATH=path/to/your/firebase-adminsdk.json
+FIREBASE_CREDENTIALS_PATH=C:\\Users\\your-user\\.spooky\\firebase-adminsdk.json
 ```
 
 ### 4. Add your Firebase Admin SDK credentials
 - Go to Firebase Console → Project Settings → Service Accounts
 - Click **Generate new private key**
-- Save the downloaded `.json` file in the project folder
-- Set `FIREBASE_CREDENTIALS_PATH` in your `.env` to its filename
+- Store the downloaded `.json` file outside the repository folder
+- Set `FIREBASE_CREDENTIALS_PATH` in your `.env` to its full local path
 
 ### 5. Set up Firestore
 In your Firebase project, create these Firestore documents:
@@ -101,6 +101,8 @@ Deploy it with:
 firebase deploy
 ```
 
+The deployed dashboard entrypoint is `public/index.html`. The old `spooky2.html` debug prototype is not part of the app.
+
 ---
 
 ## 📁 Project Structure
@@ -108,13 +110,15 @@ firebase deploy
 ```
 Spooky/
 ├── spooky2.py          # Main agent (run this)
+├── firebase.json       # Firebase Hosting config
 ├── public/
 │   ├── index.html      # Web dashboard
 │   └── 404.html
 ├── .env                # Your secrets (never committed)
+├── .env.example        # Template for local environment setup
 ├── .gitignore
 ├── .firebaserc
-└── firebase.json
+└── README.md
 ```
 
 ---
@@ -123,6 +127,8 @@ Spooky/
 
 - All API keys are stored in `.env` and never committed to this repository
 - Firebase Admin SDK credentials are excluded via `.gitignore`
+- Firebase Admin SDK credentials should be stored outside the repo entirely, not just gitignored
+- Generated screenshots and Firebase cache files should stay local and not be committed
 - Firebase web config in `index.html` is intentionally public (secured by Firebase Security Rules)
 
 ---

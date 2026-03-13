@@ -64,13 +64,19 @@ node_modules/
 
 # dotenv environment variables file
 .env
+.env.*
+
+# Example environment file for contributors
+!.env.example
 
 # dataconnect generated files
 .dataconnect
 
-# Spooky - sensitive files
-*.json
+# Spooky - local secrets and generated artifacts
+*-firebase-adminsdk-*.json
 current_view.png
-*.png
+test_view.png
 __pycache__/
 *.pyc
+.venv/
+venv/
