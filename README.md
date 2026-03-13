@@ -123,6 +123,50 @@ Spooky/
 
 ---
 
+## 🧪 Reproducible Testing
+
+Follow these steps to verify Spooky works end-to-end on your machine.
+
+### Quick smoke test (no phishing page needed)
+
+1. Complete the [Setup Instructions](#️-setup-instructions) above.
+2. Run Spooky:
+   ```bash
+   python spooky2.py
+   ```
+3. You should see:
+   ```
+   👁️ Spooky is online! (Press Ctrl+C to stop)
+   💡 Press SPACE at any time to interrupt Spooky's speech.
+   🛡️ Active: 3-layer OCR filter + URL analysis + Gemini vision
+   ```
+4. After ~60 seconds Spooky prints `Check 1: Screen looks safe (OCR)` — confirming the screen-capture → OCR pipeline works.
+5. Every 5 checks it runs a forced Gemini deep scan. You will see `🔍 Periodic deep scan...` printed, confirming the Gemini API connection works.
+
+### Trigger a phishing alert manually
+
+1. Open this test phishing-simulation page in your browser (safe, for testing):  
+   `https://www.phishtank.com` or simply open a webpage containing the word **"verify your account"**.
+2. Leave it visible on screen. Spooky's OCR will detect the keyword and send the screenshot to Gemini within the next scan cycle.
+3. Expected output:
+   - A red fullscreen alert overlay appears.
+   - Spooky speaks a warning aloud.
+   - The threat is logged in Firestore under `threat_logs`.
+   - The web dashboard shows the new log entry.
+
+### Verify Firebase logging
+
+1. Open [Firebase Console](https://console.firebase.google.com) → your project → Firestore.
+2. Navigate to `threat_logs` — new entries appear automatically after each alert.
+
+### Verify remote kill switch
+
+1. Open the hosted dashboard (or run `firebase deploy` and open the URL).
+2. Click **Deactivate (Sleep)** — Spooky prints `😴 Spooky is sleeping (website control)` within 5 seconds.
+3. Click **Activate Monitoring** — Spooky resumes automatically.
+
+---
+
 ## 🔒 Security Notes
 
 - All API keys are stored in `.env` and never committed to this repository
