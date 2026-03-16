@@ -18,6 +18,12 @@ Spooky is an always-on AI agent that:
 - 🌐 **Remotely controllable** via a Firebase-hosted web dashboard (start/stop Spooky)
 
 Spooky uses Google Cloud services through Firebase (Cloud Firestore and Firebase Hosting) for persistent threat logging and dashboard monitoring. Further, it uses a layered detection pipeline combining OCR filtering, URL heuristics, and Gemini multimodal reasoning to identify phishing attempts while minimizing unnecessary API calls.
+
+Note on Threat Origin Visualization
+
+The dashboard displays a "country of origin" field for detected threats. This data is synthetic and randomly generated for demonstration purposes only, and is used to illustrate how a real-world system could visualize threat activity geographically.
+
+In a production deployment, this field could be populated using IP intelligence services or threat intelligence APIs to estimate the likely origin of malicious activity.
 ---
 
 ## 🛠️ Tech Stack
