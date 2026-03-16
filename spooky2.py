@@ -81,13 +81,6 @@ _tts_lock = threading.Lock()
 _tts_interrupted = False
 
 
-def _on_word(name, location, length):
-    global _tts_interrupted, _tts_engine
-    if _tts_interrupted:
-        if _tts_engine:
-            _tts_engine.stop()
-
-
 def is_space_pressed():
     global _keyboard_warning_shown
     try:
@@ -139,14 +132,18 @@ def speak(text):
                 if not selected_voice:
                     selected_voice = voices[1].id if len(voices) > 1 else voices[0].id
                 _tts_engine.setProperty('voice', selected_voice)
-                _tts_engine.connect('started-word', _on_word)
                 _tts_engine.say(text)
+            # Release lock before runAndWait so interruption can acquire it
+            if not _tts_interrupted:
                 _tts_engine.runAndWait()
-                _tts_engine.stop()
-                _tts_engine = None
+            with _tts_lock:
+                if _tts_engine:
+                    _tts_engine.stop()
+                    _tts_engine = None
         except Exception as e:
             print(f"\nTTS Error: {e}")
-            _tts_engine = None
+            with _tts_lock:
+                _tts_engine = None
         finally:
             spoken_complete.set()
 
@@ -179,26 +176,74 @@ def speak(text):
 # ==========================
 
 recognizer = sr.Recognizer()
+# Improve speech recognition settings
+recognizer.energy_threshold = 4000  # Be more lenient with audio input
+recognizer.dynamic_energy_threshold = True
 
 
 def listen_to_user():
-    try:
-        print("\n🎤 Listening for your question...")
-        with sr.Microphone() as source:
-            recognizer.adjust_for_ambient_noise(source, duration=1)
-            audio = recognizer.listen(source, timeout=15, phrase_time_limit=20)
-        text = recognizer.recognize_google(audio)
-        print("User said:", text)
-        return text
-    except sr.WaitTimeoutError:
-        print("No speech detected.")
-        return None
-    except sr.UnknownValueError:
-        speak("Sorry, I didn't understand that.")
-        return None
-    except Exception as e:
-        print("Speech error:", e)
-        return None
+    """Listen to user input - tries microphone first, falls back to keyboard"""
+    max_retries = 2
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            import pyaudio
+            print("\n🎤 Listening for your question...")
+            with sr.Microphone() as source:
+                # Much better ambient noise adjustment
+                print("🔉 Adjusting to your audio environment (3 seconds)...")
+                recognizer.adjust_for_ambient_noise(source, duration=3)
+                print("🔉 Listening... Speak now (take your time, speak up to 30 seconds):")
+                # Much longer timeouts to capture full speech
+                audio = recognizer.listen(source, timeout=30, phrase_time_limit=30)
+            print("📊 Audio captured! Processing...")
+            text = recognizer.recognize_google(audio, language='en-US')
+            print(f"✅ User said: '{text}'")
+            return text
+        except (ImportError, ModuleNotFoundError):
+            # PyAudio not available, use keyboard fallback immediately
+            print("\n⚠️ Microphone not available. Type your input instead:")
+            print("🎹 Type your response (or type 'resume' to exit):")
+            text = input("You: ").strip()
+            if text:
+                print(f"✅ Input received: '{text}'")
+                return text
+            return None
+        except sr.WaitTimeoutError:
+            retry_count += 1
+            print(f"❌ No speech detected. ({retry_count}/{max_retries} retries)")
+            if retry_count >= max_retries:
+                speak("I couldn't hear you clearly. Please type your response instead.")
+                print("\n🎹 Switching to keyboard input:")
+                text = input("You: ").strip()
+                return text if text else None
+            speak("I didn't hear that. Please speak louder and try again.")
+            continue
+        except sr.UnknownValueError:
+            retry_count += 1
+            print(f"❌ Speech too unclear. ({retry_count}/{max_retries} retries)")
+            if retry_count >= max_retries:
+                speak("I'm having trouble understanding your speech. Please type your response.")
+                print("\n🎹 Switching to keyboard input:")
+                text = input("You: ").strip()
+                return text if text else None
+            speak("That was still unclear. Please SPEAK LOUDER and SLOWER. Try again.")
+            continue
+        except sr.RequestError as e:
+            print(f"❌ API error: {e}")
+            speak("The speech service is not responding. Using text input instead.")
+            print("\n🎹 Type your response:")
+            text = input("You: ").strip()
+            return text if text else None
+        except Exception as e:
+            print(f"❌ Unexpected error: {type(e).__name__}: {e}")
+            speak("An error occurred. Please type your response.")
+            print("\n🎹 Type your response:")
+            text = input("You: ").strip()
+            return text if text else None
+    
+    return None
 
 
 # ==========================
@@ -550,14 +595,24 @@ try:
             })
 
             # Voice Q&A
+            listen_fails = 0
             while True:
                 user_input = listen_to_user()
 
                 if not user_input:
-                    speak("Please ask your question, or say resume.")
+                    listen_fails += 1
+                    if listen_fails >= 3:
+                        speak("Microphone issues detected. Exiting monitoring mode.")
+                        print("⚠️ Too many listening failures. Returning to normal monitoring.")
+                        break
+                    speak("Please try again, or say resume to exit.")
                     continue
-
-                if "resume" in user_input.lower():
+                
+                listen_fails = 0  # Reset counter on successful listen
+                user_input_lower = user_input.lower()
+                print(f"DEBUG: User input recognized: '{user_input_lower}'")
+                
+                if "resume" in user_input_lower or "stop listening" in user_input_lower or "done" in user_input_lower or "exit" in user_input_lower:
                     speak("Okay. Resuming monitoring.")
                     break
 
