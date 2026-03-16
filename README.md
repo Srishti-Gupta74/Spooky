@@ -1,8 +1,8 @@
 # 👻 Spooky — Real-Time Phishing Detection Agent
 
 > Built for the **Gemini Live Agent Challenge** on Devpost  
-> A multimodal AI cybersecurity guardian that watches your screen and warns you about phishing in real time.
-
+> A multimodal AI cybersecurity guardian that monitors your screen and warns you about phishing in real time.
+> Spooky uses the Gemini 2.5 Flash-Lite model through the Google GenAI SDK to analyze screenshots and detect phishing attacks in real time.
 ---
 
 ## 🧠 What It Does
@@ -17,6 +17,7 @@ Spooky is an always-on AI agent that:
 - 📊 **Logs all threats to Firebase Firestore** with timestamp and analysis
 - 🌐 **Remotely controllable** via a Firebase-hosted web dashboard (start/stop Spooky)
 
+Spooky uses Google Cloud services through Firebase (Cloud Firestore and Firebase Hosting) for persistent threat logging and dashboard monitoring. Further, it uses a layered detection pipeline combining OCR filtering, URL heuristics, and Gemini multimodal reasoning to identify phishing attempts while minimizing unnecessary API calls.
 ---
 
 ## 🛠️ Tech Stack
@@ -28,11 +29,35 @@ Spooky is an always-on AI agent that:
 | OCR | Tesseract + OpenCV |
 | Text-to-Speech | pyttsx3 (Windows SAPI5) |
 | Speech Recognition | Google Speech Recognition |
-| Database | Firebase Firestore |
-| Dashboard | Firebase Hosting |
+| Cloud Backend | Firebase Cloud Firestore (Google Cloud) |
+| Dashboard Hosting | Firebase Hosting (Google Cloud) |
 | Key Management | python-dotenv |
 
 ---
+
+## 🏗 Architecture
+
+Spooky operates using a layered AI detection pipeline:
+
+User Screen  
+↓  
+Screenshot Capture (PyAutoGUI)  
+↓  
+OCR + URL Filtering (Tesseract + OpenCV)  
+↓  
+Gemini 2.5 Flash-Lite Analysis  
+↓  
+Threat Alert + Voice Explanation  
+↓  
+Cloud Logging (Firebase Firestore)  
+↓  
+Monitoring Dashboard (Firebase Hosting)
+
+## Why Gemini?
+
+Spooky uses the Gemini 2.5 Flash-Lite model through the Google GenAI SDK to analyze screenshots of webpages and messages in real time. Unlike rule-based phishing filters that only detect keywords or URLs, Gemini can understand the **visual layout, text content, and intent of a page simultaneously**.
+
+This multimodal reasoning allows Spooky to detect more sophisticated phishing attempts, including fake login forms, brand impersonation pages, and social engineering messages that traditional filters may miss.
 
 ## ⚙️ Setup Instructions
 
@@ -176,6 +201,21 @@ Follow these steps to verify Spooky works end-to-end on your machine.
 - Firebase web config in `index.html` is intentionally public (secured by Firebase Security Rules)
 
 ---
+## Real-World Use Cases
+
+Spooky can be used as a personal cybersecurity assistant for several scenarios:
+
+**Students and everyday users**
+Many phishing attacks target students through fake university portals, scholarship offers, or account verification messages. Spooky can detect suspicious pages before users enter credentials.
+
+**Elderly internet users**
+Older users are frequently targeted by scams involving fake banking alerts or prize offers. Spooky provides immediate visual and voice warnings to help them avoid fraudulent pages.
+
+**Remote workers**
+Employees working remotely may encounter phishing emails or malicious login pages. Spooky can act as an additional security layer by monitoring screens for suspicious content.
+
+**Security awareness training**
+Organizations can use Spooky as a demonstration tool to show how phishing attacks appear and how AI can detect them in real time.
 
 ## 👻 Made with ❤️ for the Gemini Live Agent Challenge
 `#GeminiLiveAgentChallenge`
